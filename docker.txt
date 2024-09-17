@@ -1,0 +1,256 @@
+docker
+
+
+https://thriveread.com/apache-php-with-docker-mysql-and-phpmyadmin/
+
+
+Dockerfile
+# Use an official PHP runtime
+FROM php:8.2-apache
+# Enable Apache modules
+RUN a2enmod rewrite
+# Install any extensions you need
+RUN docker-php-ext-install mysqli pdo pdo_mysql
+# Set the working directory to /var/www/html
+WORKDIR /var/www/html
+# Copy the source code in /www into the container at /var/www/html
+COPY ../www .
+
+------------------
+
+First, head over to your www/index.php and create a PHP test script as follows:
+Teste do PHP
+
+<?php
+echo "Testing a PHP Apache Docker Container";
+?>
+
+-----------------------
+
+docker-compose.yml
+version: '3.9'
+services:
+  webserver:
+    container_name: PHP-webServer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./www:/var/www/html
+    ports:
+      - 8000:80
+
+-------------
+
+docker-compose up -d
+
+-------------
+
+version: "3.9"
+services:
+  webserver:
+    container_name: PHP-webserver
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./www:/var/www/html
+    ports:
+      - 8000:80
+    depends_on:
+      - mysql-db
+
+  mysql-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: test_database
+      MYSQL_USER: db_user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+
+--------------------------------
+
+You will note that:
+
+depends_on was added to your previous PHP-webserver container. This way, PHP Apache will know to depend on MySQL database (mysql-db) service to create your connections.
+MySQL environment defines your typical database password, users, and databases. In this example, you can update them according to your liking.
+Once the Docker Container fires up a MySQL container, a test_database database will be created.
+Now, you will use these database environment variables like on a local computer. But because we are on Docker, now you will update the www/index.php file and include MySQL as follows:
+
+-------------------------
+
+<?php
+$host = 'mysql-db';
+$user = 'db_user';
+$pass = 'password';
+$db = 'test_database';
+
+$conn = new mysqli($host, $user, $pass, $db);
+
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
+
+echo "Connected to MySQL successfully";
+
+$conn->close();
+?>
+
+------------------------
+
+Here:
+
+Database connection variables must match that of your Docker MySQL container. Note that the host is not localhost. Your host will change to MySQL container service, mysql-db.
+Docker will use the mysqli you previously installed in your Dockerfile (docker-php-ext-install mysqli) to create a connection to MySQL.
+You will get the respective message if the database connection is working.
+Run the docker-compose command to check your containers:
+
+--------------------------
+
+docker-compose up -d
+
+
+----------------------------
+
+Open http://localhost:8000/. If you set up everything correctly, PHP Apache should be able to establish a connection to MySQL database as follows:
+
+---------------------------
+
+version: "3.9"
+services:
+  webserver:
+    container_name: PHP-webserver
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./www:/var/www/html
+    ports:
+      - 8000:80
+    depends_on:
+      - mysql-db
+
+  mysql-db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: test_database
+      MYSQL_USER: db_user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    links:
+      - mysql-db
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: mysql-db
+      MYSQL_ROOT_PASSWORD: password
+
+--------------------------
+
+docker-compose up -d
+
+
+-----------------------
+
+phpMyAdmin will be served on port 8081. Open http://localhost:8081/ on your browser:
+
+To access MySQL, use root as username and the value of MYSQL_ROOT_PASSWORD as password. In this example, it is password:
+This Is how your MySQL database looks like. You can confirm by making sure it was test_database.
+
+--------------------------
+
+Creating a PHP CRUD API and Running it with MySQL and PHP Apache Docker Container
+What if you now want to create a CRUD API using PHP and run it within Docker alongside PHP, Apache, and MySQL? That’s very possible. Your PHP Docker environment is working, and you can run any PHP code and still use your MySQL database.
+
+Assume you want to run the following POST and GET requests with PHP in your index.php file:
+
+-------------------------
+
+<?php
+$host = 'mysql-db';
+$user = 'db_user';
+$pass = 'password';
+$db = 'test_database';
+
+$conn = new mysqli($host, $user, $pass, $db);
+
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
+}
+
+echo "Connected to MySQL successfully";
+
+// Handle POST request
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    if (isset($_POST['submit'])) {
+        $name = $_POST['name'];
+        $email = $_POST['email'];
+
+        // Insert data into the database
+        $sql = "INSERT INTO users (name, email) VALUES ('$name', '$email')";
+        if ($conn->query($sql) === TRUE) {
+            echo "<br>Data inserted successfully";
+        } else {
+            echo "<br>Error inserting data: " . $conn->error;
+        }
+    }
+}
+
+// Handle GET request
+if ($_SERVER["REQUEST_METHOD"] == "GET") {
+    if (isset($_GET['action']) && $_GET['action'] == 'fetch') {
+        // Retrieve data from the database
+        $result = $conn->query("SELECT * FROM users");
+        if ($result->num_rows > 0) {
+            echo "<br><br>Users:<br>";
+            while ($row = $result->fetch_assoc()) {
+                echo "Name: " . $row["name"] . " - Email: " . $row["email"] . "<br>";
+            }
+        } else {
+            echo "<br>No users in the database";
+        }
+    }
+}
+
+$conn->close();
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PHP Form</title>
+</head>
+<body>
+    <h2>Submit Form</h2>
+    <form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
+        Name: <input type="text" name="name"><br>
+        Email: <input type="text" name="email"><br>
+        <input type="submit" name="submit" value="Submit">
+    </form>
+
+    <h2>Retrieve Data</h2>
+    <a href="?action=fetch">Fetch Data</a>
+</body>
+</html>
+
+------------------------
+
+What you need to do is create your database table on phpMyAdmin using the following script:
+
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL
+);
+
+-------------------------------
+
+docker-compose up -d
+
+At the same time, the data you add should be added to MySQL, and you can verify that on phpMyAdmin:
